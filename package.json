@@ -1,0 +1,41 @@
+{
+  "name": "domain-suite-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for AI agents to autonomously manage domains and DNS",
+  "type": "module",
+  "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "bin": {
+    "domain-suite-mcp": "bin/domain-suite-mcp.js"
+  },
+  "files": ["dist", "bin", "docs", "skills"],
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "rebuild": "npm run clean && npm run build",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepare": "npm run build"
+  },
+  "keywords": ["mcp", "domain", "dns", "ai", "agent", "registrar", "porkbun", "namecheap", "cloudflare", "godaddy", "claude"],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "bottleneck": "^2.19.5",
+    "fast-xml-parser": "^4.3.0",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

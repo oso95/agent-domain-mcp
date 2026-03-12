@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+.env
+.env.*
+.claude
+spec.md
