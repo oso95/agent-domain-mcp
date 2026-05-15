@@ -1,6 +1,6 @@
 import type {
   Provider, Domain, DNSRecord, AvailabilityResult, Certificate,
-  Transfer, Contact, RegisterRequest,
+  Transfer, Contact, RegisterRequest, DnssecDS, DnssecStatus,
 } from '../types.js';
 import { Feature as FeatureEnum } from '../types.js';
 import { AgentError } from '../../errors.js';
@@ -47,10 +47,15 @@ export class PorkbunProvider implements Provider {
       FeatureEnum.Registration,
       FeatureEnum.Renewal,
       FeatureEnum.DnsWrite,
+      FeatureEnum.NameserverWrite,
       FeatureEnum.Transfer,
       FeatureEnum.SSL,
       // WhoisContact NOT supported — Porkbun v3 API has no contact management endpoints
       FeatureEnum.Pricing,
+      // Registry-side DNSSEC: Porkbun publishes DS records at the parent registry.
+      // Zone-side signing is NOT exposed via the v3 API, so enableDnssec requires
+      // caller-supplied DS material (typically produced by the authoritative DNS).
+      FeatureEnum.Dnssec,
     ];
     return supported.includes(feature);
   }
@@ -156,6 +161,10 @@ export class PorkbunProvider implements Provider {
     await this.client.renewDomain(domain, years);
   }
 
+  async updateNameservers(domain: string, nameservers: string[]): Promise<void> {
+    await this.client.updateNameservers(domain, nameservers);
+  }
+
   async listDNSRecords(domain: string): Promise<DNSRecord[]> {
     const raw = await this.client.listDNSRecords(domain) as PorkbunDNSRecord[];
     return raw.map((r) => this.mapDNSRecord(r));
@@ -181,6 +190,58 @@ export class PorkbunProvider implements Provider {
 
   async deleteDNSRecord(domain: string, recordId: string): Promise<void> {
     await this.client.deleteDNSRecord(domain, recordId);
+  }
+
+  // DNSSEC: Porkbun manages DS records registry-side only.
+  async getDnssec(domain: string): Promise<DnssecStatus> {
+    const records = await this.client.getDnssecRecords(domain);
+    const dsRecords: DnssecDS[] = records.map((r) => ({
+      keyTag: r.keyTag,
+      algorithm: r.algorithm,
+      digestType: r.digestType,
+      digest: r.digest,
+    }));
+    const enabled = dsRecords.length > 0;
+    const status: DnssecStatus = {
+      domain,
+      enabled,
+      scope: enabled ? 'registry' : 'none',
+    };
+    if (dsRecords.length > 0) status.dsRecords = dsRecords;
+    return status;
+  }
+
+  /**
+   * Enable DNSSEC at the parent registry by publishing one or more DS records.
+   *
+   * Porkbun does NOT offer zone-side signing via the v3 API — DS material must be
+   * supplied by the caller (typically from the authoritative DNS provider, e.g.
+   * Cloudflare exposes it via enable_dnssec). Calling without `opts.dsRecords`
+   * therefore fails with FEATURE_NOT_SUPPORTED rather than silently doing nothing.
+   *
+   * Each DS record is published via a separate API call (createDnssecRecord
+   * accepts one key tag at a time).
+   */
+  async enableDnssec(domain: string, opts?: { dsRecords?: DnssecDS[] }): Promise<DnssecStatus> {
+    if (!opts?.dsRecords || opts.dsRecords.length === 0) {
+      throw new AgentError(
+        'FEATURE_NOT_SUPPORTED',
+        'Porkbun cannot generate DNSSEC material itself — it only publishes DS records at the parent registry.',
+        'Provide dsRecords (keyTag, algorithm, digestType, digest) produced by the authoritative DNS provider. For Cloudflare-hosted zones, call enable_dnssec on the Cloudflare provider first and forward its dsRecords here.',
+        'porkbun',
+      );
+    }
+    for (const ds of opts.dsRecords) {
+      await this.client.createDnssecRecord(domain, ds);
+    }
+    return this.getDnssec(domain);
+  }
+
+  async disableDnssec(domain: string): Promise<void> {
+    const records = await this.client.getDnssecRecords(domain);
+    for (const r of records) {
+      await this.client.deleteDnssecRecord(domain, r.keyTag);
+    }
   }
 
   async listCertificates(domain: string): Promise<Certificate[]> {

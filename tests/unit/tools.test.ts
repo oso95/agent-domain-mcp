@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { handleListCertificates, handleCreateCertificate, handleGetCertificateStatus } from '../../src/tools/ssl.js';
 import { handleTransferDomainIn, handleGetTransferStatus } from '../../src/tools/transfer.js';
 import { handleGetWhoisContact, handleUpdateWhoisContact } from '../../src/tools/contacts.js';
+import { handleUpdateNameservers } from '../../src/tools/domains.js';
 import { handleListProviders } from '../../src/tools/providers.js';
+import { CheckAvailabilityInputSchema } from '../../src/tools/availability.js';
 import type { ProviderRegistry } from '../../src/registry.js';
 import type { Provider, Certificate, Transfer, Contact } from '../../src/providers/types.js';
 import { Feature } from '../../src/providers/types.js';
@@ -162,6 +164,41 @@ describe('handleUpdateWhoisContact', () => {
   });
 });
 
+// ─── Nameservers ──────────────────────────────────────────────────────────
+
+describe('handleUpdateNameservers', () => {
+  it('calls provider.updateNameservers with domain and ns array', async () => {
+    const updateSpy = vi.fn().mockResolvedValue(undefined);
+    const provider = makeProvider({
+      supports: (f) => f === Feature.NameserverWrite,
+      updateNameservers: updateSpy,
+    });
+    const registry = makeRegistry(provider);
+    const result = await handleUpdateNameservers(
+      { domain: 'example.com', provider: 'mock', nameservers: ['ns1.web.cc', 'ns2.web.cc'] },
+      registry,
+    );
+    expect(updateSpy).toHaveBeenCalledWith('example.com', ['ns1.web.cc', 'ns2.web.cc']);
+    expect(result).toMatchObject({ success: true, domain: 'example.com', provider: 'mock' });
+  });
+
+  it('throws FEATURE_NOT_SUPPORTED when provider does not support nameserver writes', async () => {
+    const provider = makeProvider({ supports: () => false });
+    const registry = makeRegistry(provider);
+    await expect(
+      handleUpdateNameservers({ domain: 'example.com', provider: 'mock', nameservers: ['a', 'b'] }, registry),
+    ).rejects.toMatchObject({ code: 'FEATURE_NOT_SUPPORTED' });
+  });
+
+  it('throws INVALID_NAMESERVERS when fewer than 2 entries are provided', async () => {
+    const provider = makeProvider({ supports: () => true });
+    const registry = makeRegistry(provider);
+    await expect(
+      handleUpdateNameservers({ domain: 'example.com', provider: 'mock', nameservers: ['ns1.web.cc'] }, registry),
+    ).rejects.toMatchObject({ code: 'INVALID_NAMESERVERS' });
+  });
+});
+
 // ─── Providers ────────────────────────────────────────────────────────────
 
 describe('handleListProviders', () => {
@@ -186,7 +223,7 @@ describe('handleListProviders', () => {
     const config: ProviderConfig = {};
     const result = handleListProviders(registry, config) as { configured: unknown[]; unconfigured: string[] };
     expect(result.configured).toHaveLength(0);
-    expect(result.unconfigured).toHaveLength(4);
+    expect(result.unconfigured).toHaveLength(5);
   });
 
   it('includes explanatory note for unsupported feature when UNSUPPORTED_NOTES entry exists', () => {
@@ -221,5 +258,32 @@ describe('handleListProviders', () => {
     const godaddy = result.configured[0];
     expect(godaddy.supports).toContain('dns_write');
     expect(godaddy.notes?.some((n) => n.toLowerCase().includes('domain pro'))).toBe(true);
+  });
+});
+
+// ─── Provider name validation (LOW-3) ─────────────────────────────────────
+
+describe('CheckAvailabilityInputSchema provider enum (LOW-3)', () => {
+  it('accepts each documented provider name', () => {
+    for (const name of ['porkbun', 'namecheap', 'godaddy', 'cloudflare', 'webnic']) {
+      const parsed = CheckAvailabilityInputSchema.safeParse({ domain: 'example.com', provider: name });
+      expect(parsed.success, `should accept provider '${name}'`).toBe(true);
+    }
+  });
+
+  it('accepts an omitted provider (optional)', () => {
+    const parsed = CheckAvailabilityInputSchema.safeParse({ domain: 'example.com' });
+    expect(parsed.success).toBe(true);
+  });
+
+  it('rejects an invalid provider with a clear Zod error', () => {
+    const parsed = CheckAvailabilityInputSchema.safeParse({ domain: 'example.com', provider: 'parkbun' });
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const issue = parsed.error.issues.find((i) => i.path[0] === 'provider');
+      expect(issue).toBeDefined();
+      // Zod's enum error includes the accepted options in the message.
+      expect(issue!.code).toBe('invalid_enum_value');
+    }
   });
 });

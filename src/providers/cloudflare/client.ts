@@ -206,6 +206,16 @@ export class CloudflareClient {
   async getCertificateStatus(zoneId: string, certId: string): Promise<CloudflareCertificate> {
     return this.request<CloudflareCertificate>('GET', `/zones/${zoneId}/ssl/certificate_packs/${certId}`);
   }
+
+  /** Get DNSSEC details for a zone. Returns the full DS material when `status` is active. */
+  async getDnssec(zoneId: string): Promise<CloudflareDnssec> {
+    return this.request<CloudflareDnssec>('GET', `/zones/${zoneId}/dnssec`);
+  }
+
+  /** Update DNSSEC status for a zone. Body is `{ status: "active" | "disabled" }`. */
+  async patchDnssec(zoneId: string, status: 'active' | 'disabled'): Promise<CloudflareDnssec> {
+    return this.request<CloudflareDnssec>('PATCH', `/zones/${zoneId}/dnssec`, { status });
+  }
 }
 
 interface CloudflareResponse<T> {
@@ -238,6 +248,28 @@ export interface CloudflareCertificate {
   status: string;
   expires_on?: string;
   issued_on?: string;
+}
+
+/**
+ * Shape of `GET /zones/{zone_id}/dnssec` (and the PATCH response).
+ * Only fields the provider actually uses are typed; Cloudflare may include more.
+ *
+ * `status` is the source of truth for whether DNSSEC is active. The DS material
+ * (`algorithm`, `digest`, `digest_type`, `key_tag`, `public_key`, etc.) is only
+ * populated when DNSSEC has been activated on the zone.
+ */
+export interface CloudflareDnssec {
+  status: 'active' | 'pending' | 'disabled' | 'pending-disabled' | 'error' | string;
+  flags?: number;
+  algorithm?: string;
+  key_type?: string;
+  digest_type?: string;
+  digest_algorithm?: string;
+  digest?: string;
+  ds?: string;
+  key_tag?: number;
+  public_key?: string;
+  modified_on?: string;
 }
 
 function translateCloudflareError(errors: Array<{ code: number; message: string }>): AgentError {

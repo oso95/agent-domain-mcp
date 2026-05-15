@@ -1,10 +1,10 @@
 import type {
   Provider, Domain, DNSRecord, AvailabilityResult, Certificate,
-  Transfer, Contact, RegisterRequest,
+  Transfer, Contact, RegisterRequest, DnssecDS, DnssecStatus,
 } from '../types.js';
 import { Feature } from '../types.js';
 import { AgentError } from '../../errors.js';
-import { CloudflareClient, type CloudflareZone, type CloudflareDNSRecord, type CloudflareCertificate } from './client.js';
+import { CloudflareClient, type CloudflareZone, type CloudflareDNSRecord, type CloudflareCertificate, type CloudflareDnssec } from './client.js';
 
 interface CloudflareConfig {
   apiToken: string;
@@ -23,8 +23,11 @@ export class CloudflareProvider implements Provider {
   }
 
   supports(feature: Feature): boolean {
-    // Cloudflare does NOT support registration, pricing, or WHOIS contacts via API (Enterprise only)
-    const unsupported = [Feature.Registration, Feature.Renewal, Feature.Transfer, Feature.Pricing, Feature.WhoisContact];
+    // Cloudflare does NOT support registration, pricing, WHOIS contacts, or registrar-level
+    // nameserver delegation via API (Enterprise only). The provider IS the DNS host: change
+    // nameservers at the original registrar to point at Cloudflare.
+    // It does support native DNSSEC for any zone (no Enterprise plan needed).
+    const unsupported = [Feature.Registration, Feature.Renewal, Feature.Transfer, Feature.Pricing, Feature.WhoisContact, Feature.NameserverWrite];
     return !unsupported.includes(feature);
   }
 
@@ -64,6 +67,15 @@ export class CloudflareProvider implements Provider {
       'FEATURE_NOT_SUPPORTED',
       'Domain renewal is not available via API for Cloudflare accounts on non-Enterprise plans.',
       'Renew this domain with your original registrar (e.g., Porkbun or Namecheap).',
+      'cloudflare',
+    );
+  }
+
+  async updateNameservers(_domain: string, _nameservers: string[]): Promise<void> {
+    throw new AgentError(
+      'FEATURE_NOT_SUPPORTED',
+      'Cloudflare cannot change registrar-level nameservers — it is a DNS host, not a registrar (outside Enterprise plans). Cloudflare hands you nameservers to set at your original registrar.',
+      'Update nameservers via the API of your original registrar (Porkbun, Namecheap, GoDaddy, or Webnic), pointing them at the Cloudflare nameservers shown in the Cloudflare dashboard.',
       'cloudflare',
     );
   }
@@ -162,6 +174,71 @@ export class CloudflareProvider implements Provider {
       'Manage WHOIS contacts through the Cloudflare dashboard or with your original registrar.',
       'cloudflare',
     );
+  }
+
+  // --- DNSSEC ---------------------------------------------------------------
+
+  async getDnssec(domain: string): Promise<DnssecStatus> {
+    const zone = await this.client.getZone(domain);
+    const ds = await this.client.getDnssec(zone.id);
+    return this.mapDnssec(domain, ds);
+  }
+
+  /**
+   * Cloudflare manages DNSSEC entirely zone-side: PATCH dnssec status=active makes
+   * Cloudflare sign the zone and exposes the DS material the caller must publish at
+   * the parent registry.
+   *
+   * `opts.dsRecords` is not honoured because Cloudflare does not let third-party DS
+   * material be injected — the registry-side step happens at the registrar of the
+   * domain, outside Cloudflare's API. Callers who pass dsRecords get a clear error
+   * so they don't silently miss a step.
+   */
+  async enableDnssec(domain: string, opts?: { dsRecords?: DnssecDS[] }): Promise<DnssecStatus> {
+    if (opts?.dsRecords && opts.dsRecords.length > 0) {
+      throw new AgentError(
+        'FEATURE_NOT_SUPPORTED',
+        'Cloudflare does not accept externally-supplied DS records via API. Cloudflare signs the zone itself and exposes the DS to be published at the registrar.',
+        'Call enable_dnssec without dsRecords. Then publish the returned DS at your registrar (e.g. via Porkbun, Namecheap, GoDaddy or Webnic).',
+        'cloudflare',
+      );
+    }
+    const zone = await this.client.getZone(domain);
+    const ds = await this.client.patchDnssec(zone.id, 'active');
+    return this.mapDnssec(domain, ds);
+  }
+
+  async disableDnssec(domain: string): Promise<void> {
+    const zone = await this.client.getZone(domain);
+    await this.client.patchDnssec(zone.id, 'disabled');
+  }
+
+  private mapDnssec(domain: string, ds: CloudflareDnssec): DnssecStatus {
+    const active = ds.status === 'active' || ds.status === 'pending';
+    const hasMaterial = ds.key_tag !== undefined && ds.algorithm !== undefined && ds.digest_type !== undefined && !!ds.digest;
+    const out: DnssecStatus = {
+      domain,
+      enabled: active,
+      scope: active ? 'zone' : 'none',
+    };
+    if (hasMaterial) {
+      out.dsRecords = [{
+        keyTag: ds.key_tag as number,
+        algorithm: parseInt(String(ds.algorithm), 10),
+        digestType: parseInt(String(ds.digest_type), 10),
+        digest: String(ds.digest),
+      }];
+    }
+    if (ds.flags !== undefined && ds.algorithm !== undefined && ds.public_key) {
+      out.dnsKey = {
+        flags: ds.flags,
+        // Cloudflare doesn't expose protocol explicitly; DNSSEC uses 3 by RFC 4034.
+        protocol: 3,
+        algorithm: parseInt(String(ds.algorithm), 10),
+        publicKey: ds.public_key,
+      };
+    }
+    return out;
   }
 
   private mapZone(z: CloudflareZone): Domain {

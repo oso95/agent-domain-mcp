@@ -175,6 +175,10 @@ export class GoDaddyClient {
     await this.request('POST', `/v1/domains/${encodeURIComponent(domain)}/renew`, { period: years });
   }
 
+  async updateNameservers(domain: string, nameservers: string[]): Promise<void> {
+    await this.request('PATCH', `/v1/domains/${encodeURIComponent(domain)}`, { nameServers: nameservers });
+  }
+
   async listDNSRecords(domain: string): Promise<GoDaddyDNSRecord[]> {
     return this.request<GoDaddyDNSRecord[]>('GET', `/v1/domains/${encodeURIComponent(domain)}/records`);
   }

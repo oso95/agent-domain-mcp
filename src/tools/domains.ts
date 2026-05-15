@@ -65,3 +65,28 @@ export async function handleRenewDomain(input: { domain: string; years: number; 
   await provider.renewDomain(input.domain, input.years);
   return { success: true, domain: input.domain, years: input.years };
 }
+
+export async function handleUpdateNameservers(
+  input: { domain: string; nameservers: string[]; provider?: string },
+  registry: ProviderRegistry,
+) {
+  const provider = input.provider ? registry.get(input.provider) : await registry.resolveProviderForDomain(input.domain);
+  if (!provider.supports(Feature.NameserverWrite)) {
+    throw new AgentError(
+      'FEATURE_NOT_SUPPORTED',
+      `Provider '${provider.name()}' does not support changing registrar-level nameservers via API.`,
+      'Update nameservers at your original registrar (Porkbun, Namecheap, GoDaddy, or Webnic). Cloudflare is a DNS host, not a registrar — it cannot delegate at the registry parent.',
+      provider.name(),
+    );
+  }
+  if (!Array.isArray(input.nameservers) || input.nameservers.length < 2) {
+    throw new AgentError(
+      'INVALID_NAMESERVERS',
+      'At least two nameservers are required by most registries.',
+      'Provide an array of at least two FQDN nameservers, e.g. ["ns1.example.com", "ns2.example.com"].',
+      provider.name(),
+    );
+  }
+  await provider.updateNameservers(input.domain, input.nameservers);
+  return { success: true, domain: input.domain, nameservers: input.nameservers, provider: provider.name() };
+}

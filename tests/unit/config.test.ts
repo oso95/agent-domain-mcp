@@ -14,6 +14,12 @@ describe('loadConfig', () => {
     delete process.env.GODADDY_API_KEY;
     delete process.env.GODADDY_API_SECRET;
     delete process.env.CLOUDFLARE_API_TOKEN;
+    delete process.env.WEBNIC_USERNAME;
+    delete process.env.WEBNIC_PASSWORD;
+    delete process.env.WEBNIC_SANDBOX;
+    delete process.env.WEBNIC_DEFAULT_CONTACT_ID;
+    delete process.env.WEBNIC_DEFAULT_REGISTRANT_USER_ID;
+    delete process.env.WEBNIC_DEFAULT_NAMESERVERS;
   });
 
   afterEach(() => {
@@ -66,6 +72,28 @@ describe('loadConfig', () => {
     expect(config.godaddy?.apiKey).toBe('gd_key');
     expect(config.godaddy?.apiSecret).toBe('gd_secret');
   });
+
+  it('loads webnic config with credentials + sandbox + defaults', () => {
+    process.env.WEBNIC_USERNAME = 'wn_user';
+    process.env.WEBNIC_PASSWORD = 'wn_pass';
+    process.env.WEBNIC_SANDBOX = 'true';
+    process.env.WEBNIC_DEFAULT_CONTACT_ID = 'WN1234T';
+    process.env.WEBNIC_DEFAULT_REGISTRANT_USER_ID = 'REG100015';
+    process.env.WEBNIC_DEFAULT_NAMESERVERS = 'ns1.web.cc, ns2.web.cc';
+    const config = loadConfig();
+    expect(config.webnic?.username).toBe('wn_user');
+    expect(config.webnic?.password).toBe('wn_pass');
+    expect(config.webnic?.sandbox).toBe(true);
+    expect(config.webnic?.defaultContactId).toBe('WN1234T');
+    expect(config.webnic?.defaultRegistrantUserId).toBe('REG100015');
+    expect(config.webnic?.defaultNameservers).toEqual(['ns1.web.cc', 'ns2.web.cc']);
+  });
+
+  it('does not load webnic with only username', () => {
+    process.env.WEBNIC_USERNAME = 'wn_user';
+    const config = loadConfig();
+    expect(config.webnic).toBeUndefined();
+  });
 });
 
 describe('getConfiguredProviderNames', () => {
@@ -93,6 +121,7 @@ describe('getUnconfiguredProviderNames', () => {
     expect(names).toContain('namecheap');
     expect(names).toContain('godaddy');
     expect(names).toContain('cloudflare');
+    expect(names).toContain('webnic');
   });
 
   it('excludes configured providers', () => {

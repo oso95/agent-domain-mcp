@@ -25,9 +25,14 @@ export class NamecheapProvider implements Provider {
   }
 
   supports(feature: Feature): boolean {
-    // All features supported; SSL listing/status works via API but provisioning requires
-    // purchasing a cert product via the Namecheap dashboard first.
-    return true;
+    // SSL listing/status works via API but provisioning requires purchasing a cert
+    // product via the Namecheap dashboard first.
+    // DNSSEC is NOT exposed by Namecheap's public API — it is configurable only via
+    // the Namecheap dashboard UI (Advanced DNS panel). Verified 2026-05 against the
+    // official method list, namecheap/go-namecheap-sdk, and the KB articles linked
+    // from docs/PROVIDERS.md. Update this if Namecheap ever publishes a DNSSEC API.
+    const unsupported: Feature[] = [Feature.Dnssec];
+    return !unsupported.includes(feature);
   }
 
   async checkAvailability(domain: string): Promise<AvailabilityResult> {
@@ -118,6 +123,11 @@ export class NamecheapProvider implements Provider {
 
   async renewDomain(domain: string, years: number): Promise<void> {
     await this.client.renewDomain(domain, years);
+  }
+
+  async updateNameservers(domain: string, nameservers: string[]): Promise<void> {
+    const { sld, tld } = this.splitDomain(domain);
+    await this.client.setNameservers(sld, tld, nameservers);
   }
 
   async getPricingTable(): Promise<Record<string, { registration: number; renewal: number; currency: string }>> {

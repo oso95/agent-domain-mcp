@@ -26,7 +26,8 @@ export class GoDaddyProvider implements Provider {
   supports(feature: Feature): boolean {
     // GoDaddy SSL requires purchasing a certificate product via the GoDaddy dashboard;
     // the API does not support provisioning SSL certificates directly.
-    const unsupported: Feature[] = [Feature.SSL];
+    // DNSSEC: GoDaddy's public OTE API does not expose DNSSEC management — declare unsupported.
+    const unsupported: Feature[] = [Feature.SSL, Feature.Dnssec];
     return !unsupported.includes(feature);
   }
 
@@ -86,6 +87,10 @@ export class GoDaddyProvider implements Provider {
 
   async renewDomain(domain: string, years: number): Promise<void> {
     await this.client.renewDomain(domain, years);
+  }
+
+  async updateNameservers(domain: string, nameservers: string[]): Promise<void> {
+    await this.client.updateNameservers(domain, nameservers);
   }
 
   async listDNSRecords(domain: string): Promise<DNSRecord[]> {

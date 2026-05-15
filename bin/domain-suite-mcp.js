@@ -64,6 +64,11 @@ Environment variables (add only what you need):
   NAMECHEAP_API_KEY / NAMECHEAP_API_USER
   GODADDY_API_KEY / GODADDY_API_SECRET
   CLOUDFLARE_API_TOKEN
+  WEBNIC_USERNAME / WEBNIC_PASSWORD
+  WEBNIC_SANDBOX (optional, set to "true" for OTE)
+  WEBNIC_DEFAULT_CONTACT_ID (required for register/transfer)
+  WEBNIC_DEFAULT_REGISTRANT_USER_ID (required for register/transfer)
+  WEBNIC_DEFAULT_NAMESERVERS (optional, comma-separated; min 2)
 
 See docs/PROVIDERS.md for full setup instructions.
 `);

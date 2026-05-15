@@ -229,6 +229,15 @@ export class NamecheapClient {
     return data.DomainDNSGetHostsResult?.Host ?? [];
   }
 
+  // Nameservers (registrar-level delegation)
+  async setNameservers(sld: string, tld: string, nameservers: string[]): Promise<void> {
+    await this.call('namecheap.domains.dns.setCustom', {
+      SLD: sld,
+      TLD: tld,
+      Nameservers: nameservers.join(','),
+    });
+  }
+
   // DNS: Write all records at once (Namecheap set-all pattern)
   async setDNSRecords(sld: string, tld: string, records: NamecheapHostRecord[]): Promise<void> {
     const params: Record<string, string> = { SLD: sld, TLD: tld };

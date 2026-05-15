@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/domain-suite-mcp.svg)](https://www.npmjs.com/package/domain-suite-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen.svg)](https://nodejs.org)
-[![Tests](https://img.shields.io/badge/tests-161%20passing-brightgreen.svg)](tests)
+[![Tests](https://img.shields.io/badge/tests-195%20passing-brightgreen.svg)](tests)
 
 `domain-suite-mcp` is an open-source [MCP](https://modelcontextprotocol.io) server written in TypeScript that enables AI agents to autonomously manage domains and DNS without human intervention. It acts as a unified abstraction layer over multiple domain registrar and DNS provider APIs, exposing a consistent set of 21 MCP tools that any MCP-compatible agent can call.
 
@@ -118,19 +118,27 @@ See [docs/SKILLS.md](docs/SKILLS.md) for full workflow patterns and prompt templ
 
 ## Provider Support
 
-| Feature | Porkbun | Namecheap | GoDaddy | Cloudflare |
-|---|---|---|---|---|
-| Domain availability check | Yes | Yes | Yes | Yes |
-| Domain registration | Yes | Yes | Yes | Enterprise only |
-| Domain renewal | Yes | Yes | Yes | Enterprise only |
-| DNS record CRUD | Yes | Yes | Yes* | Yes |
-| SSL certificate management | Yes (full) | No | No | List/status only |
-| WHOIS contact management | No | Yes | Yes | Enterprise only |
-| Domain transfer (inbound) | Yes | Yes | Yes | No |
-| Pricing via API | Yes | Yes | Yes | No |
-| Sandbox / test environment | Yes | Yes | Yes | No |
+| Feature | Porkbun | Namecheap | GoDaddy | Cloudflare | Webnic |
+|---|---|---|---|---|---|
+| Domain availability check | Yes | Yes | Yes | Yes | Yes |
+| Domain registration | Yes | Yes | Yes | Enterprise only | Yes† |
+| Domain renewal | Yes | Yes | Yes | Enterprise only | Yes |
+| DNS record CRUD | Yes | Yes | Yes* | Yes | Yes‡ |
+| Registrar nameserver update | Yes | Yes | Yes | No (DNS host only) | Yes |
+| SSL certificate management | Yes (full) | No | No | List/status only | Read-only◆ |
+| WHOIS contact management | No | Yes | Yes | Enterprise only | Read-only |
+| Domain transfer (inbound) | Yes | Yes | Yes | No | Yes† |
+| Pricing via API | Yes | Yes | Yes | No | Yes |
+| DNSSEC management | No** | Dashboard only | No** | Yes§ | Yes¶ |
+| Sandbox / test environment | Yes | Yes | Yes | No | Yes (OTE) |
 
 \* GoDaddy DNS management requires 10+ active domains or Domain Pro plan (~$240/yr).
+† Webnic registration and transfer require a pre-created contact handle and registrant user ID (see [docs/PROVIDERS.md](docs/PROVIDERS.md#webnic)).
+‡ Webnic DNS supports 22 record types (A/AAAA/CNAME/MX/TXT/SRV/CAA/ALIAS/HTTPS/SVCB/TLSA/SMIMEA/DS/CDS/CDNSKEY/PTR/SSHFP/NAPTR/SOA/CERT/LOC/URI). NS = `update_nameservers` (registrar-level). DNSKEY via the zone DNSSEC tool.
+§ Cloudflare DNSSEC is zone-side only: Cloudflare signs the zone and returns the DS for the caller to publish at their registrar.
+¶ Webnic DNSSEC covers both registry-side (DS records at the parent) and zone-side (Webnic-hosted authoritative DNS) layers.
+\*\* Porkbun and GoDaddy expose DNSSEC via API but are not yet wired in this MCP — see open PRs / roadmap. Namecheap's public API does not expose DNSSEC at all (verified 2026-05): configure via dashboard.
+◆ Webnic SSL exposes `list_certificates` and `get_certificate_status` against the WebNIC SSL Restful v2 API. `create_certificate` requires a CSR up-front and DCV validation — place orders via the WebNIC portal, then track them via the MCP.
 
 **Recommended setup:** Register on Porkbun or Namecheap, then point nameservers to Cloudflare for DNS. Best of both: easy registration + Cloudflare's fast DNS API.
 
@@ -171,6 +179,21 @@ CLOUDFLARE_API_TOKEN=...
 CLOUDFLARE_ACCOUNT_ID=...   # optional
 ```
 
+### Webnic
+
+```bash
+WEBNIC_USERNAME=your_api_user
+WEBNIC_PASSWORD=your_api_secret
+WEBNIC_SANDBOX=true                       # optional; use OTE environment
+WEBNIC_DEFAULT_CONTACT_ID=WN964984T       # required for register/transfer
+WEBNIC_DEFAULT_REGISTRANT_USER_ID=REG100015  # required for register/transfer
+WEBNIC_DEFAULT_NAMESERVERS=ns1.web.cc,ns2.web.cc  # optional; defaults shown
+```
+
+WebNIC blocks registry-side writes (nameservers, transfers, contact updates) when the domain status is `name_protected` or `transfer_protected`. The provider auto-unlocks the domain, performs the write, then re-locks to `name_protected` (the strictest level — and WebNIC's default for newly-registered domains). No configuration needed.
+
+Your IP must be on the WebNIC authorized access list (separate per environment: production vs OTE).
+
 ---
 
 ## Tools
@@ -183,6 +206,7 @@ CLOUDFLARE_ACCOUNT_ID=...   # optional
 | `get_domain` | Get details for a specific domain |
 | `register_domain` | Register a new domain |
 | `renew_domain` | Renew an existing domain |
+| `update_nameservers` | Change the registrar-level nameservers (parent zone delegation) |
 | `list_dns_records` | List all DNS records for a domain |
 | `create_dns_record` | Create a new DNS record |
 | `update_dns_record` | Update an existing DNS record (full replacement) |

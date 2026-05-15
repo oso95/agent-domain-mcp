@@ -140,6 +140,78 @@ Cloudflare's DNS API is the best in class. The recommended setup:
 
 ---
 
+## Webnic
+
+**Best for:** Resellers and partners using the [WebNIC Premier Partner Program](https://www.webnic.cc/premier-partner-program/) — wide ccTLD coverage (Asia-Pacific in particular).
+
+### Setup
+
+1. Sign in to the WebNIC Partner Portal at [portal.webnic.cc](https://portal.webnic.cc)
+2. Request API access — your IP must be added to the authorized access list (separate per environment: production vs OTE sandbox)
+3. Receive your API username and secret
+
+```env
+WEBNIC_USERNAME=your_api_user
+WEBNIC_PASSWORD=your_api_secret
+```
+
+### Sandbox (OTE)
+
+```env
+WEBNIC_SANDBOX=true
+```
+
+OTE base URL: `https://oteapi.webnic.cc`. Production base URL: `https://api.webnic.cc`. Credentials are environment-specific — OTE tokens do not work in production.
+
+### Registration Prerequisites
+
+Unlike registrars that accept contact info inline at register time, WebNIC works with pre-created **contact handles** (e.g. `WN964984T`) and a **registrant account user ID** (e.g. `REG100015`). Both must already exist before any `register_domain` or `transfer_domain_in` call. Create them via the WebNIC portal or via the contact/registrant API endpoints, then export:
+
+```env
+WEBNIC_DEFAULT_CONTACT_ID=WN964984T
+WEBNIC_DEFAULT_REGISTRANT_USER_ID=REG100015
+# Optional: defaults to ns1.web.cc,ns2.web.cc. Custom nameservers must already exist as host objects on your account.
+WEBNIC_DEFAULT_NAMESERVERS=ns1.example.cc,ns2.example.cc
+```
+
+Without these, `register_domain` returns `REGISTRATION_PREREQUISITES_NOT_MET` with the actionable next steps.
+
+### Domain Protection Auto-Unlock
+
+WebNIC ships three registry-side protection levels:
+
+| Level | What it blocks |
+|---|---|
+| `active` | Nothing — fully writable |
+| `transfer_protected` | Unauthorised transfers |
+| `name_protected` (strictest) | Transfers, deletion, contact updates, nameserver changes |
+
+Newly-registered domains land in `name_protected` by default at WebNIC. Any registry-side write (`update_nameservers`, `transfer_domain_in`, `update_whois_contact` once implemented) needs the domain in `active` for the duration of the call.
+
+The provider performs this transparently:
+
+1. capture the current status,
+2. switch to `active` (only if not already),
+3. run the operation,
+4. re-lock to `name_protected` in a `finally` block — even if the op throws.
+
+No configuration needed. The post-write level is always `name_protected` (the strictest, and WebNIC's own default). Restore failures are logged to stderr (out of band from the MCP stdio channel) and never mask the original error.
+
+### Known Limitations
+
+- **DNS record types:** A, AAAA, CNAME, MX, TXT, SRV are supported. NS and CAA are not. The save endpoint replaces the entire record set for `(type, name)`, so the provider transparently read-merge-writes when you add/update a single rdata to preserve siblings (mirroring the GoDaddy strategy).
+- **WHOIS contact updates not implemented:** `get_whois_contact` works (reads via `get_domain_info` + `query-contact`); `update_whois_contact` returns `FEATURE_NOT_SUPPORTED` — update contacts via the WebNIC portal or call the WebNIC REST contact endpoints directly.
+- **SSL is read-only:** `list_certificates` and `get_certificate_status` are wired against the WebNIC SSL Restful v2 API (`/ssl/v2/orders/search`, `/ssl/v2/orders/info`). `create_certificate` returns `SSL_CSR_REQUIRED` because the MCP interface does not currently carry a CSR — the WebNIC `Place Order` endpoint requires one. Place the order via the WebNIC portal (or call `/ssl/v2/orders/new` directly with a CSR), then track issuance via `list_certificates` / `get_certificate_status`. Certificate IDs are formatted `webnic-ssl-<orderId>`. DCV (email/DNS/file) is handled outside the MCP. Use Porkbun for fully-automated SSL.
+- **Rate limits:** 5,000 requests/day and 100,000/month per account. The server enforces a small client-side limiter to stay well below.
+
+---
+
+## Availability lookup fallback chain
+
+When no provider returns availability data, the server falls back to RDAP → GoDaddy public availability → [whoisjson.com](https://whoisjson.com/) (third-party). The third-party fallback transmits the domain name to whoisjson.com, which is operated outside the providers configured above. If you do not want domain names sent to that endpoint, configure at least one registrar provider with `Pricing` capability so the cascade resolves earlier.
+
+---
+
 ## Multi-Provider Setup
 
 You can configure multiple providers simultaneously. The server will:

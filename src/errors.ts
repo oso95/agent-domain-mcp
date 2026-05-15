@@ -4,6 +4,15 @@ export class AgentError extends Error {
     message: string,
     public readonly action: string,
     public readonly provider: string,
+    /**
+     * Optional raw provider response excerpt. SECURITY: MUST NEVER contain:
+     *   - request bodies (Porkbun's body includes apikey/secretapikey)
+     *   - URLs with query strings (Namecheap puts credentials in query params)
+     *   - request headers (Authorization Bearer/sso-key tokens)
+     *   - any string built from credentials.
+     * Only safe to set from response messages (provider-side error text) or
+     * truncated response body excerpts.
+     */
     public readonly raw?: string,
   ) {
     super(message);

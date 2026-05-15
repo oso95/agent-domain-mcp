@@ -16,7 +16,10 @@ export const CheckAvailabilityInputSchema = z.object({
     )
     .describe("e.g. 'myapp' or 'myapp.com'"),
   tlds: z.array(z.string()).optional().describe("e.g. ['com','io','dev']; default .com"),
-  provider: z.string().optional().describe('provider for pricing (optional)'),
+  provider: z
+    .enum(['porkbun', 'namecheap', 'godaddy', 'cloudflare', 'webnic'])
+    .optional()
+    .describe('provider for pricing (optional)'),
 });
 
 export type CheckAvailabilityInput = z.infer<typeof CheckAvailabilityInputSchema>;

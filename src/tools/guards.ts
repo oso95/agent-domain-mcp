@@ -6,7 +6,7 @@ export function assertDnsWrite(providerName: string, supports: (f: Feature) => b
     throw new AgentError(
       'FEATURE_NOT_SUPPORTED',
       `Provider '${providerName}' does not support DNS record management.`,
-      'Use a provider that supports DNS writes (e.g., cloudflare, godaddy, namecheap, porkbun).',
+      'Use a provider that supports DNS writes (e.g., cloudflare, godaddy, namecheap, porkbun, webnic).',
       providerName,
     );
   }
@@ -17,7 +17,7 @@ export function assertTransfer(providerName: string, supports: (f: Feature) => b
     throw new AgentError(
       'FEATURE_NOT_SUPPORTED',
       `Provider '${providerName}' does not support domain transfers via API.`,
-      'Use Porkbun, Namecheap, or GoDaddy for domain transfers.',
+      'Use Porkbun, Namecheap, GoDaddy, or Webnic for domain transfers.',
       providerName,
     );
   }
@@ -39,7 +39,18 @@ export function assertWhoisContact(providerName: string, supports: (f: Feature) 
     throw new AgentError(
       'FEATURE_NOT_SUPPORTED',
       `Provider '${providerName}' does not support WHOIS contact management via API.`,
-      'Use Namecheap or GoDaddy for WHOIS contact management, or update contacts via the provider web interface.',
+      'Use Namecheap, GoDaddy, or Webnic for WHOIS contact reads, or update contacts via the provider web interface.',
+      providerName,
+    );
+  }
+}
+
+export function assertDnssec(providerName: string, supports: (f: Feature) => boolean): void {
+  if (!supports(Feature.Dnssec)) {
+    throw new AgentError(
+      'FEATURE_NOT_SUPPORTED',
+      `Provider '${providerName}' does not support DNSSEC operations via API.`,
+      'Use Cloudflare or Webnic for DNSSEC management.',
       providerName,
     );
   }

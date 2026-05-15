@@ -44,7 +44,7 @@ export class ProviderRegistry {
       throw new AgentError(
         'NO_PROVIDERS_CONFIGURED',
         'No providers are configured.',
-        'Set API credentials for at least one provider (Porkbun, Namecheap, GoDaddy, or Cloudflare) in your environment.',
+        'Set API credentials for at least one provider (Porkbun, Namecheap, GoDaddy, Cloudflare, or Webnic) in your environment.',
         'none',
       );
     }
@@ -118,6 +118,11 @@ export async function buildRegistry(config: ProviderConfig): Promise<ProviderReg
   if (config.godaddy) {
     const { GoDaddyProvider } = await import('./providers/godaddy/provider.js');
     registry.register(new GoDaddyProvider(config.godaddy));
+  }
+
+  if (config.webnic) {
+    const { WebnicProvider } = await import('./providers/webnic/provider.js');
+    registry.register(new WebnicProvider(config.webnic));
   }
 
   return registry;

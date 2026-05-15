@@ -8,6 +8,13 @@ interface PorkbunCredentials {
   secretApiKey: string;
 }
 
+export interface PorkbunDnssecRecord {
+  keyTag: number;
+  algorithm: number;
+  digestType: number;
+  digest: string;
+}
+
 export class PorkbunClient {
   private credentials: PorkbunCredentials;
   private baseUrl: string;
@@ -120,6 +127,10 @@ export class PorkbunClient {
     await this.request(`/domain/renew/${encodeURIComponent(domain)}`, { years });
   }
 
+  async updateNameservers(domain: string, nameservers: string[]): Promise<void> {
+    await this.request(`/domain/updateNs/${encodeURIComponent(domain)}`, { ns: nameservers });
+  }
+
   // DNS operations
   async listDNSRecords(domain: string): Promise<unknown[]> {
     type Response = { status: string; records: unknown[] };
@@ -156,6 +167,54 @@ export class PorkbunClient {
 
   async deleteDNSRecord(domain: string, recordId: string): Promise<void> {
     await this.request(`/dns/delete/${encodeURIComponent(domain)}/${encodeURIComponent(recordId)}`, {}, 'dns');
+  }
+
+  // DNSSEC operations (registry-side DS records)
+  //
+  // Porkbun publishes DS records directly at the parent registry — there is no
+  // zone-side signing exposed via the v3 API. Callers must supply DS material
+  // (typically produced by the authoritative DNS provider) when enabling.
+  async getDnssecRecords(domain: string): Promise<PorkbunDnssecRecord[]> {
+    type Response = {
+      status: string;
+      // API returns a records object keyed by key tag value, each value carrying
+      // keyTag/alg/digestType/digest (+ optional pubKey for key data records).
+      records?: Record<string, {
+        keyTag?: string;
+        alg?: string;
+        digestType?: string;
+        digest?: string;
+        pubKey?: string;
+      }>;
+    };
+    const data = await this.request<Response>(`/dns/getDnssecRecords/${encodeURIComponent(domain)}`, {}, 'dns');
+    const out: PorkbunDnssecRecord[] = [];
+    for (const [tagKey, rec] of Object.entries(data.records ?? {})) {
+      // The map key is the key tag; rec.keyTag duplicates it but may be missing in some payloads.
+      const keyTagStr = rec.keyTag ?? tagKey;
+      const keyTag = parseInt(keyTagStr, 10);
+      const algorithm = parseInt(rec.alg ?? '', 10);
+      const digestType = parseInt(rec.digestType ?? '', 10);
+      const digest = rec.digest ?? '';
+      // Skip rows that are not parseable DS material (defensive; pubKey-only entries lack alg/digest).
+      if (!Number.isFinite(keyTag) || !Number.isFinite(algorithm) || !Number.isFinite(digestType) || !digest) continue;
+      out.push({ keyTag, algorithm, digestType, digest });
+    }
+    return out;
+  }
+
+  async createDnssecRecord(domain: string, ds: { keyTag: number; algorithm: number; digestType: number; digest: string }): Promise<void> {
+    // Porkbun expects all DS fields as strings.
+    await this.request(`/dns/createDnssecRecord/${encodeURIComponent(domain)}`, {
+      keyTag: String(ds.keyTag),
+      alg: String(ds.algorithm),
+      digestType: String(ds.digestType),
+      digest: ds.digest,
+    }, 'dns');
+  }
+
+  async deleteDnssecRecord(domain: string, keyTag: number): Promise<void> {
+    await this.request(`/dns/deleteDnssecRecord/${encodeURIComponent(domain)}/${encodeURIComponent(String(keyTag))}`, {}, 'dns');
   }
 
   // SSL operations
